@@ -17,35 +17,41 @@ EvtManager mgr;
 
 //not used yet!
 //start thinking about how to organize code into class library
-class SNENatsParticipant
-{   
+class ECommsEntity
+{
     NATS* _nats;
     String _id;
-    
-    public:
-    SNENatsParticipant()
+
+  public:
+    ECommsEntity(NATS* nats, String id): _nats(nats), _id(id)
     {
-    }
-    
-    SNENatsParticipant(NATS* nats, String id):_nats(nats), _id(id)
-    {
-      //_nats->subscribe(_id + ".get", [](NATS::msg m){});
     }
 
-    void init()
+    //publish
+    //register ( subscribe )
+};
+
+class ECommsClient : public ECommsEntity
+{
+  public:
+    ECommsClient(NATS* nats, String id): ECommsEntity(nats, id)
     {
     }
-    
-    void onGet(NATS::msg msg) 
-    {
-      Serial.print("onGet:");
-      Serial.println(msg.data);
 
-      if(String(msg.data) == String("name"))
-      {
-//        Serial.println("posting reply");
-        _nats->publish(msg.reply, "sensor1");
-      }
+    void doGet(NATS::msg msg)
+    {
+    }
+};
+
+class ECommsParticipant : public ECommsEntity
+{
+  public:
+    ECommsParticipant(NATS* nats, String id): ECommsEntity(nats, id)
+    {
+    }
+
+    void onGet(NATS::msg msg)
+    {
     }
 };
 
@@ -68,25 +74,25 @@ NATS nats(
   4222
 );
 
-// for DHT11, 
+// for DHT11,
 //      VCC: 5V or 3V
 //      GND: GND
 //      DATA: 2
 int pinDHT11 = 2;
 SimpleDHT11 dht11(pinDHT11);
 
-void connect_wifi() 
+void connect_wifi()
 {
   //WiFi.mode(WIFI_STA);
-  
+
   //WiFi.begin(WIFI_SSID, WIFI_PSK);
   //while (WiFi.status() != WL_CONNECTED) {
   //  yield();
   //}
 
   // attempt to connect to Wifi network:
-//  Serial.print("Attempting to connect to WPA SSID: ");
-//  Serial.println(WIFI_SSID);
+  //  Serial.print("Attempting to connect to WPA SSID: ");
+  //  Serial.println(WIFI_SSID);
   while (WiFi.begin(WIFI_SSID, WIFI_PSK) != WL_CONNECTED) {
     // failed, retry
     //Serial.print(".");
@@ -101,60 +107,89 @@ int _count = 0;
 int _high = 0;
 int _low = 100;
 
-void nats_action_handler(NATS::msg msg) 
+void nats_action_handler(NATS::msg msg)
 {
 }
 
-void nats_get_handler(NATS::msg msg) 
+void nats_set_handler(NATS::msg msg)
 {
+  Serial.println("setting:" + String(msg.subject) + " with:" + String(msg.data));
+
+  char s[50];
+  char* what = "name";
+
+  what = strtok((char*)msg.subject, "."); //ID
+  what = strtok(NULL, ".");               //SET
+  what = strtok(NULL, ".");               //WHAT
   
+//  while (what != NULL)
+//  {
+//    Serial.println(what);
+//    what = strtok(NULL, ".");
+//  }
+
+  
+  if(what == NULL)
+    Serial.println("OOOOOOOOOPS");
+    
+  if (String(what) == String("name"))
+  {
+    Serial.println("posting reply: set name");
+
+    NAME = String(msg.data);
+
+    nats.publish(msg.reply, "Success");
+  }
+}
+
+void nats_get_handler(NATS::msg msg)
+{
   Serial.println("getting:" + String(msg.data));
 
-  
   char s[50];
 
-  if(String(msg.data) == String("role"))
+  if (String(msg.data) == String("role"))
   {
     Serial.println("posting reply: role");
     nats.publish(msg.reply, "Sensor");
   }
-  
-  if(String(msg.data) == String("type"))
+
+  if (String(msg.data) == String("type"))
   {
     //Serial.println("posting reply");
     nats.publish(msg.reply, "Temperature");
   }
-  
-  if(String(msg.data) == String("subtype"))
+
+  if (String(msg.data) == String("subtype"))
   {
     //Serial.println("posting reply");
     nats.publish(msg.reply, "None");
   }
-  
-    if(String(msg.data) == String("name"))
+
+  if (String(msg.data) == String("name"))
   {
     //Serial.println("posting reply");
     nats.publish(msg.reply, NAME.c_str());
   }
-  
-  if(String(msg.data) == String("location"))
+
+  if (String(msg.data) == String("location"))
   {
     //Serial.println("posting reply");
     nats.publish(msg.reply, LOCATION.c_str());
   }
 
-  if(String(msg.data) == String("low"))
+  if (String(msg.data) == String("low"))
   {
     //Serial.println("low");
-    
+
     sprintf(s, "%d", _low);
     nats.publish(msg.reply, s);
   }
 
-  if(String(msg.data) == String("high"))
+  if (String(msg.data) == String("high"))
   {
     Serial.println("high");
-    
+
     sprintf(s, "%d", _high);
     nats.publish(msg.reply, s);
   }
@@ -187,7 +222,7 @@ void nats_status(int temperature, int humidity)
   //
 
   Serial.println(status);
-  
+
   nats_status(status);
 }
 
@@ -200,10 +235,10 @@ void nats_status(int temperature, int humidity, float batteryLevel)
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;
   doc["level"] = batteryLevel;
-  
+
   serializeJson(doc, status);
   //
-  
+
   nats_status(status);
 }
 
@@ -212,13 +247,14 @@ void nats_heartbeat()
   nats.publish("heartbeat", ID.c_str());
 }
 
-void nats_on_connect() 
+void nats_on_connect()
 {
   Serial.println("subscribing");
 
-  String topic = ID + ".get";
-  
-  nats.subscribe(topic.c_str(), nats_get_handler);
+  String gettopic = ID + ".get";
+  String settopic = ID + ".set.>";
+  nats.subscribe(gettopic.c_str(), nats_get_handler);
+  nats.subscribe(settopic.c_str(), nats_set_handler);
 }
 
 bool processNats()
@@ -233,18 +269,18 @@ bool processHeartbeat()
   return false;
 }
 
-void setup() 
+void setup()
 {
-  SNENatsParticipant snp(&nats, ID.c_str());
-  
+  ECommsParticipant snp(&nats, ID.c_str());
+
   pinMode(ldr_pin, INPUT);
-  
-  mgr.addListener(new EvtTimeListener(1000, true, (EvtAction)processNats)); 
-  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processHeartbeat)); 
-  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processSensor)); 
-   
+
+  mgr.addListener(new EvtTimeListener(1000, true, (EvtAction)processNats));
+  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processHeartbeat));
+  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processSensor));
+
   connect_wifi();
-  
+
   nats.on_connect = nats_on_connect;
   nats.connect();
 }
@@ -253,7 +289,7 @@ bool _didit = false;
 
 USE_EVENTUALLY_LOOP(mgr) // Use this instead of your loop() function.
 
-bool processSensor() 
+bool processSensor()
 {
   if (WiFi.status() != WL_CONNECTED)
     connect_wifi();
@@ -263,43 +299,43 @@ bool processSensor()
   byte humidity = 0;
   int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-    Serial.print("Read DHT11 failed, err="); Serial.println(err);delay(1000);
+    Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
     return false;
   }
-  
+
   Serial.println("Sample OK: ");
-   
-  Serial.println((int)temperature); 
 
-  int f = (temperature * 9/5) + 32;
+  Serial.println((int)temperature);
 
-  Serial.println((int)f); 
-  
+  int f = (temperature * 9 / 5) + 32;
+
+  Serial.println((int)f);
+
   char status[50];
   sprintf(status, "C:%d F:%d H:%d",
-    (int)temperature,
-    (int)(temperature * 9/5) + 32,
-    (int)humidity);
-      
-  if(f > _high)
+          (int)temperature,
+          (int)(temperature * 9 / 5) + 32,
+          (int)humidity);
+
+  if (f > _high)
     _high = f;
 
-  if(f < _low)
+  if (f < _low)
     _low = f;
 
   int a0 = analogRead(ADC_BATTERY);
-  float voltage = a0 * (4.3/1023.0);
-  
+  float voltage = a0 * (4.3 / 1023.0);
+
   //Serial.println(voltage);
   //Serial.print(voltage);
   //Serial.println("V");
 
-  if(digitalRead(ldr_pin )==1)
+  if (digitalRead(ldr_pin ) == 1)
     Serial.println("DARK");
 
   //Serial.println(digitalRead(ldr_pin));
-  
-  nats_status((int)(temperature * 9/5) + 32, (int)humidity, voltage);
-  
+
+  nats_status((int)(temperature * 9 / 5) + 32, (int)humidity, voltage);
+
   return false;
 }
