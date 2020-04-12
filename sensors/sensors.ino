@@ -121,22 +121,31 @@ void nats_set_handler(NATS::msg msg)
   what = strtok((char*)msg.subject, "."); //ID
   what = strtok(NULL, ".");               //SET
   what = strtok(NULL, ".");               //WHAT
-  
-//  while (what != NULL)
-//  {
-//    Serial.println(what);
-//    what = strtok(NULL, ".");
-//  }
 
-  
-  if(what == NULL)
+  //  while (what != NULL)
+  //  {
+  //    Serial.println(what);
+  //    what = strtok(NULL, ".");
+  //  }
+
+
+  if (what == NULL)
     Serial.println("OOOOOOOOOPS");
-    
+
   if (String(what) == String("name"))
   {
     Serial.println("posting reply: set name");
 
     NAME = String(msg.data);
+
+    nats.publish(msg.reply, "Success");
+  }
+
+  if (String(what) == String("location"))
+  {
+    Serial.println("posting reply: set location");
+
+    LOCATION = String(msg.data);
 
     nats.publish(msg.reply, "Success");
   }
