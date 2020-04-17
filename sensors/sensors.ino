@@ -59,18 +59,19 @@ class ECommsParticipant : public ECommsEntity
 //each sensor needs a unique id
 
 //sensor1
-String ID = "c2b420b0-36eb-11e9-b56e-0800200c9a66";
+//String ID = "c2b420b0-36eb-11e9-b56e-0800200c9a66";
 
 //sensor2
-//String ID = "8d1da580-bd43-4417-90fc-1ce525e4fa24";
-String NAME = "xtra";
-String LOCATION = "office";
+String ID = "8d1da580-bd43-4417-90fc-1ce525e4fa24";
+String NAME = "sensor2";
+String LOCATION = "location2";
 
 NATS nats(
   &client,
   //"demo.nats.io",
   //NATS_DEFAULT_PORT
-  "192.168.86.27",  //rPi
+  //"192.168.86.27",  //rPi
+  "192.168.86.30",    //maclinbook
   4222
 );
 
@@ -149,6 +150,15 @@ void nats_set_handler(NATS::msg msg)
 
     nats.publish(msg.reply, "Success");
   }
+
+  //TODO 
+  //SEND EVENTS AS JSON
+  //"EVENT":"PROPERTY_CHANGED"
+  //"PROPERTY":"WHICH"
+  //
+  
+  String topic = ID + ".event";
+  nats.publish(topic.c_str(), "PROPERTY_CHANGED");
 }
 
 void nats_get_handler(NATS::msg msg)
