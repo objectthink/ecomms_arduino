@@ -1,5 +1,4 @@
-#include <Eventually.h>
-
+#include <Eventually.h>   //event driven calbacks
 #include <ArduinoJson.h>
 #include <SimpleDHT.h>
 #include <stdarg.h>
@@ -7,6 +6,9 @@
 #include <Arduino.h>
 #include <ArduinoNATS.h>
 
+/*
+ * wifi access
+ */
 const char* WIFI_SSID = "keygrip";
 const char* WIFI_PSK = "sne2keygrip";
 const int ldr_pin = 3;
@@ -15,56 +17,25 @@ WiFiClient client;
 Client* clientPointer = &client;
 EvtManager mgr;
 
-//not used yet!
-//start thinking about how to organize code into class library
-class ECommsEntity
-{
-    NATS* _nats;
-    String _id;
+/*
+ * some counters available as get requests
+ */
+int _count = 0;
+int _high = 0;
+int _low = 100;
 
-  public:
-    ECommsEntity(NATS* nats, String id): _nats(nats), _id(id)
-    {
-    }
 
-    //publish
-    //register ( subscribe )
-};
-
-class ECommsClient : public ECommsEntity
-{
-  public:
-    ECommsClient(NATS* nats, String id): ECommsEntity(nats, id)
-    {
-    }
-
-    void doGet(NATS::msg msg)
-    {
-    }
-};
-
-class ECommsParticipant : public ECommsEntity
-{
-  public:
-    ECommsParticipant(NATS* nats, String id): ECommsEntity(nats, id)
-    {
-    }
-
-    void onGet(NATS::msg msg)
-    {
-    }
-};
-
-//until an ecomms address service is written and running
-//each sensor needs a unique id
-
+////////////////////////////////////SENSOR ID
 //sensor1
 //String ID = "c2b420b0-36eb-11e9-b56e-0800200c9a66";
+//String NAME = "sensor1";
+//String LOCATION = "location1";
 
 //sensor2
 String ID = "8d1da580-bd43-4417-90fc-1ce525e4fa24";
 String NAME = "sensor2";
 String LOCATION = "location2";
+
 
 NATS nats(
   &client,
@@ -82,36 +53,32 @@ NATS nats(
 int pinDHT11 = 2;
 SimpleDHT11 dht11(pinDHT11);
 
+/*
+ * connect to wifi
+ */
 void connect_wifi()
 {
-  //WiFi.mode(WIFI_STA);
-
-  //WiFi.begin(WIFI_SSID, WIFI_PSK);
-  //while (WiFi.status() != WL_CONNECTED) {
-  //  yield();
-  //}
-
   // attempt to connect to Wifi network:
-  //  Serial.print("Attempting to connect to WPA SSID: ");
-  //  Serial.println(WIFI_SSID);
+  Serial.print("Attempting to connect to WPA SSID: ");
+  Serial.println(WIFI_SSID);
   while (WiFi.begin(WIFI_SSID, WIFI_PSK) != WL_CONNECTED) {
-    // failed, retry
-    //Serial.print(".");
-    //delay(5000);
     yield();
   }
 
-  //Serial.println("connected");
+  Serial.println("connected");
 }
 
-int _count = 0;
-int _high = 0;
-int _low = 100;
-
+////////////////////////////////////NATS HANDLERS
+/*
+ * handle action requests
+ */
 void nats_action_handler(NATS::msg msg)
 {
 }
 
+/*
+ * handle set requests
+ */
 void nats_set_handler(NATS::msg msg)
 {
   Serial.println("setting:" + String(msg.subject) + " with:" + String(msg.data));
@@ -151,12 +118,12 @@ void nats_set_handler(NATS::msg msg)
     nats.publish(msg.reply, "Success");
   }
 
-  //TODO 
+  //TODO
   //SEND EVENTS AS JSON
   //"EVENT":"PROPERTY_CHANGED"
   //"PROPERTY":"WHICH"
   //
-  
+
   String topic = ID + ".event";
   nats.publish(topic.c_str(), "PROPERTY_CHANGED");
 }
@@ -214,6 +181,7 @@ void nats_get_handler(NATS::msg msg)
   }
 }
 
+////////////////////////////////////NATS PUBLISHING
 void nats_status(char* status)
 {
   String topic = ID + ".status.environment";
@@ -266,6 +234,7 @@ void nats_heartbeat()
   nats.publish("heartbeat", ID.c_str());
 }
 
+////////////////////////////////////NATS CALLBACKS
 void nats_on_connect()
 {
   Serial.println("subscribing");
@@ -276,60 +245,53 @@ void nats_on_connect()
   nats.subscribe(settopic.c_str(), nats_set_handler);
 }
 
+void nats_on_disconnect()
+{ 
+}
+
+void nats_on_error()
+{
+}
+
+////////////////////////////////////EVENTUALLY CALLBACKS
 bool processNats()
 {
   nats.process();
-  return false;
+  return true;
 }
 
 bool processHeartbeat()
 {
   nats_heartbeat();
-  return false;
+  return true;
 }
-
-void setup()
-{
-  ECommsParticipant snp(&nats, ID.c_str());
-
-  pinMode(ldr_pin, INPUT);
-
-  mgr.addListener(new EvtTimeListener(1000, true, (EvtAction)processNats));
-  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processHeartbeat));
-  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processSensor));
-
-  connect_wifi();
-
-  nats.on_connect = nats_on_connect;
-  nats.connect();
-}
-
-bool _didit = false;
-
-USE_EVENTUALLY_LOOP(mgr) // Use this instead of your loop() function.
 
 bool processSensor()
 {
   if (WiFi.status() != WL_CONNECTED)
     connect_wifi();
 
+  /////////////////////////////////////////////
+  //TEMPERATURE HUMIDITY
   // read without samples.
   byte temperature = 0;
   byte humidity = 0;
   int err = SimpleDHTErrSuccess;
-  if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-    Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
+  if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess)
+  {
+    Serial.print("Read DHT11 failed, err="); Serial.println(err);
+    delay(1000);
     return false;
   }
 
   Serial.println("Sample OK: ");
-
   Serial.println((int)temperature);
 
   int f = (temperature * 9 / 5) + 32;
 
   Serial.println((int)f);
 
+  //create status to publish over ecomms
   char status[50];
   sprintf(status, "C:%d F:%d H:%d",
           (int)temperature,
@@ -352,9 +314,32 @@ bool processSensor()
   if (digitalRead(ldr_pin ) == 1)
     Serial.println("DARK");
 
-  //Serial.println(digitalRead(ldr_pin));
+  Serial.println(digitalRead(ldr_pin));
 
   nats_status((int)(temperature * 9 / 5) + 32, (int)humidity, voltage);
 
-  return false;
+  return true;
 }
+
+////////////////////////////////////SETUP
+void setup()
+{
+  pinMode(ldr_pin, INPUT);
+
+  mgr.addListener(new EvtTimeListener(1000, true, (EvtAction)processNats));
+  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processHeartbeat));  
+  mgr.addListener(new EvtTimeListener(2000, true, (EvtAction)processSensor));
+
+  connect_wifi();
+
+  Serial.println("connecting to nats");
+  nats.on_connect = nats_on_connect;
+  nats.on_disconnect = nats_on_disconnect;
+  nats.on_error = nats_on_error;
+  nats.connect();
+  
+  Serial.println("connected to nats!");
+}
+
+////////////////////////////////////LOOP
+USE_EVENTUALLY_LOOP(mgr) // Use this instead of your loop() function.
